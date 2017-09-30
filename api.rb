@@ -145,9 +145,6 @@ post "/rides" do
           })
         )
 
-        #key.locked_at = nil
-        #key.save
-
         key.update(
           locked_at: nil,
           recovery_point: RECOVERY_POINT_FINISHED,
