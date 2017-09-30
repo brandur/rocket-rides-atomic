@@ -32,7 +32,7 @@ post "/rides" do
   # close proximity, one of the two will be aborted by Postgres because we're
   # using a transaction with SERIALIZABLE isolation level. It may not look it,
   # but this code is safe from races.
-  atomic_phase(key) do
+  atomic_phase(key, new_recovery_point: nil) do
     key = IdempotencyKey.first(user_id: user[:id], idempotency_key: key_val)
 
     if key
@@ -72,7 +72,7 @@ post "/rides" do
   loop do
     case key[:recovery_point]
     when RECOVERY_POINT_STARTED
-      atomic_phase(key) do
+      atomic_phase(key, new_recovery_point: RECOVERY_POINT_RIDE_CREATED) do
         ride = Ride.create(
           origin_lat:       params["origin_lat"],
           origin_lon:       params["origin_lon"],
@@ -91,14 +91,10 @@ post "/rides" do
           resource_type: "ride",
           user_id:       user[:id],
         )
-
-        # and ALSO in the same transaction, move the recovery point along
-        key.update(recovery_point: RECOVERY_POINT_RIDE_CREATED)
-        key.save
       end
 
     when RECOVERY_POINT_RIDE_CREATED
-      atomic_phase(key) do
+      atomic_phase(key, new_recovery_point: RECOVERY_POINT_CHARGE_CREATED) do
         # retrieve a ride record if necessary (i.e. we're recovering)
         ride = Ride.first(idempotency_key_id: key[:id]) if ride.nil?
 
@@ -123,11 +119,10 @@ post "/rides" do
 
         # within the transaction, update our ride and key
         ride.update(stripe_charge_id: charge.id)
-        key.update(recovery_point: RECOVERY_POINT_CHARGE_CREATED)
       end
 
     when RECOVERY_POINT_CHARGE_CREATED
-      atomic_phase(key) do
+      atomic_phase(key, new_recovery_point: RECOVERY_POINT_FINISHED) do
         # Send a receipt asynchronously by adding an entry to the staged_jobs
         # table. By funneling the job through Postgres, we make this operation
         # transaction-safe.
@@ -142,7 +137,6 @@ post "/rides" do
 
         key.update(
           locked_at: nil,
-          recovery_point: RECOVERY_POINT_FINISHED,
           response_code: 201,
           response_body: Sequel.pg_jsonb({
             message: Messages.ok
@@ -234,11 +228,16 @@ end
 # A simple wrapper for our atomic phases. We're not doing anything special here
 # -- just defining some common transaction options and consolidating how we
 # recover from various types of transactional failures.
-def atomic_phase(key, &block)
+def atomic_phase(key, new_recovery_point:, &block)
   error = false
   begin
     DB.transaction(isolation: :serializable) do
       block.call
+
+      # update to the given recovery point *inside* the transaction
+      if !key.nil? && !new_recovery_point.nil?
+        key.update(recovery_point: new_recovery_point)
+      end
     end
   rescue Sequel::SerializationFailure
     # unlock the key and tell the user to retry
