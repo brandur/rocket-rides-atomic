@@ -39,25 +39,20 @@ post "/rides" do
       # Programs sending multiple requests with different parameters but the
       # same idempotency key is a bug.
       if key[:request_params] != params
-        halt 409, "There was a mismatch between this request's parameters " \
-          "and the parameters of a previously stored request with the same " \
-          "Idempotency-Key."
+        halt 409, wrap_error(Messages.error_params_mismatch)
       end
 
       # Only acquire a lock if the key is unlocked or its lock as expired
       # because it was long enough ago.
       if key[:locked_at] && key[:locked_at] > Time.now - IDEMPOTENCY_KEY_LOCK_TIMEOUT
-        halt 409, "An API request with the same Idempotency-Key is already " \
-          "in progress."
+        halt 409, wrap_error(Messages.error_request_in_progress)
       end
 
-      # This request has already finished to satisfaction. Return the results
+      # Lock the key unless the request is already finished.
       # that are stored on it.
-      if key[:recovery_point] == RECOVERY_POINT_FINISHED
-        return [key[:response_code], JSON.generate(key[:response_body])]
+      if key[:recovery_point] != RECOVERY_POINT_FINISHED
+        key.update(locked_at: Time.now)
       end
-
-      key.update(locked_at: Time.now)
     else
       key = IdempotencyKey.create(
         idempotency_key: key_val,
@@ -150,7 +145,7 @@ post "/rides" do
           recovery_point: RECOVERY_POINT_FINISHED,
           response_code: 201,
           response_body: Sequel.pg_jsonb({
-            message: "Payment accepted. Your pilot is on their way!"
+            message: Messages.ok
           })
         )
       end
@@ -204,6 +199,38 @@ RECOVERY_POINT_RIDE_CREATED   = "ride_created"
 RECOVERY_POINT_CHARGE_CREATED = "charge_created"
 RECOVERY_POINT_FINISHED       = "finished"
 
+module Messages
+  def self.ok
+    "Payment accepted. Your pilot is on their way!"
+  end
+
+  def self.error_params_mismatch
+    "There was a mismatch between this request's parameters and the " \
+      "parameters of a previously stored request with the same " \
+      "Idempotency-Key."
+  end
+
+  def self.error_request_in_progress
+    "An API request with the same Idempotency-Key is already in progress."
+  end
+
+  def self.error_require_float(key:)
+    "Parameter '#{key}' must be a floating-point number."
+  end
+
+  def self.error_require_lat(key:)
+    "Parameter '#{key}' must be a valid latitude coordinate."
+  end
+
+  def self.error_require_lon(key:)
+    "Parameter '#{key}' must be a valid longitude coordinate."
+  end
+
+  def self.error_require_param(key:)
+    "Please specify parameter '#{key}'."
+  end
+end
+
 # A simple wrapper for our atomic phases. We're not doing anything special here
 # -- just defining some common transaction options and consolidating how we
 # recover from various types of transactional failures.
@@ -237,6 +264,14 @@ def authenticate_user(_request)
   DB[:users].first(id: 1)
 end
 
+def wrap_error(message)
+  { error: message }
+end
+
+def wrap_ok(message)
+  { message: message }
+end
+
 def validate_idempotency_key(request)
   # In Rack, headers are accessed from an key named after them and prefixed
   # with `HTTP_`.
@@ -257,49 +292,37 @@ end
 def validate_params(request)
   {
     "origin_lat" => validate_params_lat(request, "origin_lat"),
-    "origin_lon" => validate_params_lat(request, "origin_lon"),
+    "origin_lon" => validate_params_lon(request, "origin_lon"),
     "target_lat" => validate_params_lat(request, "target_lat"),
-    "target_lon" => validate_params_lat(request, "target_lon"),
+    "target_lon" => validate_params_lon(request, "target_lon"),
   }
 end
 
 def validate_params_float(request, key)
   val = validate_params_present(request, key)
 
-  # Float as opposed to to_f because it's more strict about what it'll take
+  # Float as opposed to to_f because it's more strict about what it'll take.
   begin
     Float(val)
   rescue ArgumentError
-    halt 422, "Parameter #{key} must be a floating-point number"
+    halt 422, wrap_error(Messages.error_require_float(key: key))
   end
 end
 
 def validate_params_lat(request, key)
   val = validate_params_float(request, key)
-
-  if val < -90.0 || val > 90.0
-    halt 422, "Parameter #{key} must be a valid latitude coordinate"
-  end
-
-  val
+  return val if val >= -90.0 && val <= 90.0
+  halt 422, wrap_error(Messages.error_require_lat(key: key))
 end
 
 def validate_params_lon(request, key)
   val = validate_params_float(request, key)
-
-  if val < -180.0 || val > 180.0
-    halt 422, "Parameter #{key} must be a valid longitude coordinate"
-  end
-
-  val
+  return val if val >= -180.0 && val <= 180.0
+  halt 422, wrap_error(Messages.error_require_lon(key: key))
 end
 
 def validate_params_present(request, key)
   val = request.POST[key]
-
-  if val.nil? || val.empty?
-    halt 422, "Please specify parameter #{key}"
-  end
-
-  val
+  return val if !val.nil? && !val.empty?
+  halt 422, wrap_error(Messages.error_require_param(key: key))
 end
