@@ -9,9 +9,9 @@ Requirements:
 Setup:
 
 ```
+bundle install
 createdb rocket-rides-atomic
 psql rocket-rides-atomic < schema.sql
-bundle install
 forego run up.rb
 forego start
 ```
@@ -34,6 +34,7 @@ curl -i -X POST http://localhost:5000/rides -H "Idempotency-Key: $IDEMPOTENCY_KE
 Run the tests:
 
 ```
+bundle install
 createdb rocket-rides-atomic-test
 psql rocket-rides-atomic-test < schema.sql
 bundle exec rspec spec/
