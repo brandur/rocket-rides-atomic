@@ -9,4 +9,7 @@ gem "stripe"
 
 group :development do
   gem "pry"
+  gem "rack-test"
+  gem "rake"
+  gem "rspec"
 end

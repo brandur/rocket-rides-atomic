@@ -2,6 +2,7 @@ GEM
   remote: https://rubygems.org/
   specs:
     coderay (1.1.1)
+    diff-lcs (1.2.5)
     excon (0.59.0)
     faraday (0.13.1)
       multipart-post (>= 1.2, < 3)
@@ -16,6 +17,22 @@ GEM
     rack (1.6.4)
     rack-protection (1.5.3)
       rack
+    rack-test (0.6.3)
+      rack (>= 1.0)
+    rake (10.5.0)
+    rspec (3.4.0)
+      rspec-core (~> 3.4.0)
+      rspec-expectations (~> 3.4.0)
+      rspec-mocks (~> 3.4.0)
+    rspec-core (3.4.0)
+      rspec-support (~> 3.4.0)
+    rspec-expectations (3.4.0)
+      diff-lcs (>= 1.2.0, < 2.0)
+      rspec-support (~> 3.4.0)
+    rspec-mocks (3.4.0)
+      diff-lcs (>= 1.2.0, < 2.0)
+      rspec-support (~> 3.4.0)
+    rspec-support (3.4.0)
     sequel (5.0.0)
     sinatra (1.4.8)
       rack (~> 1.5)
@@ -34,6 +51,9 @@ DEPENDENCIES
   pg
   pry
   puma
+  rack-test
+  rake
+  rspec
   sequel
   sinatra
   stripe

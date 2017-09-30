@@ -5,10 +5,13 @@ require "stripe"
 
 DB = Sequel.connect(ENV["DATABASE_URL"] || abort("need DATABASE_URL"))
 DB.extension :pg_json
-DB.loggers << Logger.new($stdout)
-
 Stripe.api_key = ENV["STRIPE_API_KEY"] || abort("need STRIPE_API_KEY")
-Stripe.log_level = Stripe::LEVEL_INFO
+
+# a verbose mode to help with debugging
+if ENV["VERBOSE"] == "true"
+  DB.loggers << Logger.new($stdout)
+  Stripe.log_level = Stripe::LEVEL_INFO
+end
 
 set :server, %w[puma]
 
@@ -148,7 +151,7 @@ post "/rides" do
         key.update(
           locked_at: nil,
           recovery_point: RECOVERY_POINT_FINISHED,
-          response_code: 200,
+          response_code: 201,
           response_body: Sequel.pg_jsonb({
             message: "Payment accepted. Your pilot is on their way!"
           })

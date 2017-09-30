@@ -5,7 +5,8 @@
 require "sequel"
 require "stripe"
 
-DB = Sequel.connect(ENV["DATABASE_URL"] || abort("need DATABASE_URL"))
+DB = Sequel.connect(ENV["DATABASE_URL"] || abort("need DATABASE_URL")) \
+  unless defined?(:DB)
 Stripe.api_key = ENV["STRIPE_API_KEY"] || abort("need STRIPE_API_KEY")
 
 EMAIL = "jane@example.com"

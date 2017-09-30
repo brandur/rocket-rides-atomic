@@ -1,0 +1,8 @@
+before_script:
+  - createdb rocket-rides-atomic-test
+  - psql rocket-rides-atomic-test < schema.sql
+language: ruby
+rvm:
+  - 2.4.0
+services:
+  - postgresql
