@@ -33,24 +33,24 @@ post "/rides" do
   # using a transaction with SERIALIZABLE isolation level. It may not look it,
   # but this code is safe from races.
   atomic_phase(key, new_recovery_point: nil) do
-    key = IdempotencyKey.first(user_id: user[:id], idempotency_key: key_val)
+    key = IdempotencyKey.first(user_id: user.id, idempotency_key: key_val)
 
     if key
       # Programs sending multiple requests with different parameters but the
       # same idempotency key is a bug.
-      if key[:request_params] != params
+      if key.request_params != params
         halt 409, wrap_error(Messages.error_params_mismatch)
       end
 
       # Only acquire a lock if the key is unlocked or its lock as expired
       # because it was long enough ago.
-      if key[:locked_at] && key[:locked_at] > Time.now - IDEMPOTENCY_KEY_LOCK_TIMEOUT
+      if key.locked_at && key.locked_at > Time.now - IDEMPOTENCY_KEY_LOCK_TIMEOUT
         halt 409, wrap_error(Messages.error_request_in_progress)
       end
 
       # Lock the key unless the request is already finished.
       # that are stored on it.
-      if key[:recovery_point] != RECOVERY_POINT_FINISHED
+      if key.recovery_point != RECOVERY_POINT_FINISHED
         key.update(locked_at: Time.now)
       end
     else
@@ -59,9 +59,9 @@ post "/rides" do
         locked_at:       Time.now,
         recovery_point:  RECOVERY_POINT_STARTED,
         request_params:  Sequel.pg_jsonb(params),
-        user_id:         user[:id],
+        user_id:         user.id,
       )
-      puts "Created idempotency key ID #{key[:id]}"
+      puts "Created idempotency key ID #{key.id}"
     end
   end
 
@@ -70,7 +70,7 @@ post "/rides" do
   ride = nil
 
   loop do
-    case key[:recovery_point]
+    case key.recovery_point
     when RECOVERY_POINT_STARTED
       atomic_phase(key, new_recovery_point: RECOVERY_POINT_RIDE_CREATED) do
         ride = Ride.create(
@@ -79,7 +79,7 @@ post "/rides" do
           target_lat:       params["target_lat"],
           target_lon:       params["target_lon"],
           stripe_charge_id: nil, # no charge created yet
-          user_id:          user[:id],
+          user_id:          user.id,
         )
 
         # in the same transaction insert an audit record for what happened
@@ -87,16 +87,16 @@ post "/rides" do
           action:        AUDIT_RIDE_CREATED,
           data:          Sequel.pg_jsonb(params),
           origin_ip:     request.ip,
-          resource_id:   ride[:id],
+          resource_id:   ride.id,
           resource_type: "ride",
-          user_id:       user[:id],
+          user_id:       user.id,
         )
       end
 
     when RECOVERY_POINT_RIDE_CREATED
       atomic_phase(key, new_recovery_point: RECOVERY_POINT_CHARGE_CREATED) do
         # retrieve a ride record if necessary (i.e. we're recovering)
-        ride = Ride.first(idempotency_key_id: key[:id]) if ride.nil?
+        ride = Ride.first(idempotency_key_id: key.id) if ride.nil?
 
         # if ride is still nil by this point, we have a bug
         raise "Bug! Should have ride for key at #{RECOVERY_POINT_RIDE_CREATED}" \
@@ -110,8 +110,8 @@ post "/rides" do
           charge = Stripe::Charge.create(
             amount:      2000,
             currency:    "usd",
-            customer:    user[:stripe_customer_id],
-            description: "Charge for ride #{ride[:id]}",
+            customer:    user.stripe_customer_id,
+            description: "Charge for ride #{ride.id}",
           )
         rescue Stripe::InvalidRequestError
           # TODO: handle PERMANENT failure
@@ -131,7 +131,7 @@ post "/rides" do
           job_args: Sequel.pg_jsonb({
             amount:   2000,
             currency: "usd",
-            user_id:  user[:id]
+            user_id:  user.id
           })
         )
 
@@ -148,14 +148,14 @@ post "/rides" do
       break
 
     else
-      raise "Bug! Unhandled recovery point '#{key[:recovery_point]}'."
+      raise "Bug! Unhandled recovery point '#{key.recovery_point}'."
     end
 
     # If we got here, allow the loop to move us onto the next phase of the
     # request. Finished requests will break the loop.
   end
 
-  [key[:response_code], JSON.generate(key[:response_body])]
+  [key.response_code, JSON.generate(key.response_body)]
 end
 
 #
@@ -166,6 +166,9 @@ class IdempotencyKey < Sequel::Model
 end
 
 class Ride < Sequel::Model
+end
+
+class User < Sequel::Model
 end
 
 #
@@ -251,7 +254,7 @@ def atomic_phase(key, new_recovery_point:, &block)
       rescue StandardError
         # We're already inside an error condition, so swallow any additional
         # errors from here and just send them to logs.
-        puts "Failed to unlock key #{key[:id]}."
+        puts "Failed to unlock key #{key.id}."
       end
     end
   end
@@ -260,7 +263,7 @@ end
 def authenticate_user(_request)
   # This is obviously something you shouldn't do in a real application, but for
   # now we're just going to authenticate all requests as our test user.
-  DB[:users].first(id: 1)
+  User.first(id: 1)
 end
 
 def wrap_error(message)
