@@ -2,9 +2,9 @@
 
 Requirements:
 
-1. Postgres
-2. Ruby
-3. forego
+1. Postgres (`brew install postgres`)
+2. Ruby (`brew install ruby`)
+3. forego (`brew install forego`)
 
 Setup:
 
