@@ -49,7 +49,6 @@ post "/rides" do
       end
 
       # Lock the key unless the request is already finished.
-      # that are stored on it.
       if key.recovery_point != RECOVERY_POINT_FINISHED
         key.update(locked_at: Time.now)
       end
