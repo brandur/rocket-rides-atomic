@@ -26,6 +26,22 @@ RSpec.describe "api.rb" do
   it "passes successfully" do
     post "/rides", VALID_PARAMS, { "HTTP_IDEMPOTENCY_KEY" => SecureRandom.uuid }
     expect(last_response.status).to eq(201)
-    expect(JSON.parse(last_response.body)["message"]).to eq(Messages.ok)
+    expect(unwrap_ok(last_response.body)).to eq(Messages.ok)
+  end
+
+  #
+  # helpers
+  #
+
+  private def unwrap_error(body)
+    data = JSON.parse(body, symbolize_names: true)
+    expect(data).to have_key(:error)
+    data[:error]
+  end
+
+  private def unwrap_ok(body)
+    data = JSON.parse(body, symbolize_names: true)
+    expect(data).to have_key(:message)
+    data[:message]
   end
 end
