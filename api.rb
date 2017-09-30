@@ -266,10 +266,14 @@ def authenticate_user(_request)
   User.first(id: 1)
 end
 
+# Wraps a message in the standard structure that we send back for error
+# responses from the API. Still needs to be JSON-encoded before transmission.
 def wrap_error(message)
   { error: message }
 end
 
+# Wraps a message in the standard structure that we send back for success
+# responses from the API. Still needs to be JSON-encoded before transmission.
 def wrap_ok(message)
   { message: message }
 end
