@@ -26,8 +26,6 @@ RSpec.describe "api.rb" do
   it "passes successfully" do
     post "/rides", VALID_PARAMS, { "HTTP_IDEMPOTENCY_KEY" => SecureRandom.uuid }
     expect(last_response.status).to eq(201)
-    expect(JSON.parse(last_response.body)["message"]).to eq(
-      "Payment accepted. Your pilot is on their way!"
-    )
+    expect(JSON.parse(last_response.body)["message"]).to eq(Messages.ok)
   end
 end
