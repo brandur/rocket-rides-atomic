@@ -4,5 +4,9 @@ before_script:
   - createdb rocket-rides-atomic-test
   - psql rocket-rides-atomic-test < schema.sql
 language: ruby
+notifications:
+  email:
+    on_success: never
 rvm:
   - 2.4.0
+sudo: false
