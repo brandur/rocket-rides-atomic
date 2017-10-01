@@ -74,12 +74,13 @@ post "/rides" do
     when RECOVERY_POINT_STARTED
       atomic_phase(key, new_recovery_point: RECOVERY_POINT_RIDE_CREATED) do
         ride = Ride.create(
-          origin_lat:       params["origin_lat"],
-          origin_lon:       params["origin_lon"],
-          target_lat:       params["target_lat"],
-          target_lon:       params["target_lon"],
-          stripe_charge_id: nil, # no charge created yet
-          user_id:          user.id,
+          idempotency_key_id: key.id,
+          origin_lat:         params["origin_lat"],
+          origin_lon:         params["origin_lon"],
+          target_lat:         params["target_lat"],
+          target_lon:         params["target_lon"],
+          stripe_charge_id:   nil, # no charge created yet
+          user_id:            user.id,
         )
 
         # in the same transaction insert an audit record for what happened

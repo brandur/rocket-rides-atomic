@@ -70,12 +70,35 @@ RSpec.describe "api.rb" do
 
   describe "atomic phases and recovery points" do
     it "continues from #{RECOVERY_POINT_STARTED}" do
+      key = create_key(recovery_point: RECOVERY_POINT_STARTED)
+      post "/rides", VALID_PARAMS,
+        { "HTTP_IDEMPOTENCY_KEY" => key.idempotency_key }
+      expect(last_response.status).to eq(201)
+      expect(unwrap_ok(last_response.body)).to eq(Messages.ok)
     end
 
     it "continues from #{RECOVERY_POINT_RIDE_CREATED}" do
+      key = create_key(recovery_point: RECOVERY_POINT_RIDE_CREATED)
+
+      # here we're taking advantage of the fact that the names of our API
+      # parameters match the names of our database columns perfectly
+      Ride.create(VALID_PARAMS.merge(
+        idempotency_key_id: key.id,
+        user_id: user.id,
+      ))
+
+      post "/rides", VALID_PARAMS,
+        { "HTTP_IDEMPOTENCY_KEY" => key.idempotency_key }
+      expect(last_response.status).to eq(201)
+      expect(unwrap_ok(last_response.body)).to eq(Messages.ok)
     end
 
     it "continues from #{RECOVERY_POINT_CHARGE_CREATED}" do
+      key = create_key(recovery_point: RECOVERY_POINT_CHARGE_CREATED)
+      post "/rides", VALID_PARAMS,
+        { "HTTP_IDEMPOTENCY_KEY" => key.idempotency_key }
+      expect(last_response.status).to eq(201)
+      expect(unwrap_ok(last_response.body)).to eq(Messages.ok)
     end
   end
 
