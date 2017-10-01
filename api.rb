@@ -1,3 +1,4 @@
+require "json"
 require "pg"
 require "sequel"
 require "sinatra"
@@ -39,13 +40,13 @@ post "/rides" do
       # Programs sending multiple requests with different parameters but the
       # same idempotency key is a bug.
       if key.request_params != params
-        halt 409, wrap_error(Messages.error_params_mismatch)
+        halt 409, JSON.generate(wrap_error(Messages.error_params_mismatch))
       end
 
       # Only acquire a lock if the key is unlocked or its lock as expired
       # because it was long enough ago.
       if key.locked_at && key.locked_at > Time.now - IDEMPOTENCY_KEY_LOCK_TIMEOUT
-        halt 409, wrap_error(Messages.error_request_in_progress)
+        halt 409, JSON.generate(wrap_error(Messages.error_request_in_progress))
       end
 
       # Lock the key unless the request is already finished.
@@ -82,7 +83,7 @@ post "/rides" do
         )
 
         # in the same transaction insert an audit record for what happened
-        DB[:audit_records].insert(
+        AuditRecord.insert(
           action:        AUDIT_RIDE_CREATED,
           data:          Sequel.pg_jsonb(params),
           origin_ip:     request.ip,
@@ -161,6 +162,9 @@ end
 # models
 #
 
+class AuditRecord < Sequel::Model
+end
+
 class IdempotencyKey < Sequel::Model
 end
 
@@ -198,6 +202,15 @@ RECOVERY_POINT_FINISHED       = "finished"
 module Messages
   def self.ok
     "Payment accepted. Your pilot is on their way!"
+  end
+
+  def self.error_key_required
+    "Please specify an idempotency key with the Idempotency-Key header."
+  end
+
+  def self.error_key_too_short
+    "Idempotency-Key must be at least %s characters long." %
+      [IDEMPOTENCY_KEY_MIN_LENGTH]
   end
 
   def self.error_params_mismatch
@@ -283,12 +296,11 @@ def validate_idempotency_key(request)
   key = request.env["HTTP_IDEMPOTENCY_KEY"]
 
   if key.nil? || key.empty?
-    halt 400, 'Please specify the Idempotency-Key header'
+    halt 400, JSON.generate(wrap_error(Messages.error_key_required))
   end
 
   if key.length < IDEMPOTENCY_KEY_MIN_LENGTH
-    halt 400, "Idempotency-Key must be at least %s characters long" %
-      [IDEMPOTENCY_KEY_MIN_LENGTH]
+    halt 400, JSON.generate(wrap_error(Messages.error_key_too_short))
   end
 
   key
@@ -310,24 +322,24 @@ def validate_params_float(request, key)
   begin
     Float(val)
   rescue ArgumentError
-    halt 422, wrap_error(Messages.error_require_float(key: key))
+    halt 422, JSON.generate(wrap_error(Messages.error_require_float(key: key)))
   end
 end
 
 def validate_params_lat(request, key)
   val = validate_params_float(request, key)
   return val if val >= -90.0 && val <= 90.0
-  halt 422, wrap_error(Messages.error_require_lat(key: key))
+  halt 422, JSON.generate(wrap_error(Messages.error_require_lat(key: key)))
 end
 
 def validate_params_lon(request, key)
   val = validate_params_float(request, key)
   return val if val >= -180.0 && val <= 180.0
-  halt 422, wrap_error(Messages.error_require_lon(key: key))
+  halt 422, JSON.generate(wrap_error(Messages.error_require_lon(key: key)))
 end
 
 def validate_params_present(request, key)
   val = request.POST[key]
   return val if !val.nil? && !val.empty?
-  halt 422, wrap_error(Messages.error_require_param(key: key))
+  halt 422, JSON.generate(wrap_error(Messages.error_require_param(key: key)))
 end
