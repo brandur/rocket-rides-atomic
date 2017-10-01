@@ -37,14 +37,10 @@ RSpec.describe "api.rb" do
 
     it "returns a stored result" do
       body = wrap_ok("hello")
-      key = IdempotencyKey.create(
-        idempotency_key: key_val,
-        locked_at:       nil,
-        recovery_point:  RECOVERY_POINT_FINISHED,
-        request_params:  Sequel.pg_jsonb(VALID_PARAMS),
-        response_code:   201,
-        response_body:   body,
-        user_id:         user.id,
+      key = create_key(
+        recovery_point: RECOVERY_POINT_FINISHED,
+        response_code:  201,
+        response_body:  body,
       )
       post "/rides", VALID_PARAMS,
         { "HTTP_IDEMPOTENCY_KEY" => key.idempotency_key }
@@ -53,13 +49,7 @@ RSpec.describe "api.rb" do
     end
 
     it "passes for keys that are unlocked" do
-      key = IdempotencyKey.create(
-        idempotency_key: key_val,
-        locked_at:       nil,
-        recovery_point:  RECOVERY_POINT_STARTED,
-        request_params:  Sequel.pg_jsonb(VALID_PARAMS),
-        user_id:         user.id,
-      )
+      key = create_key(locked_at: nil)
       post "/rides", VALID_PARAMS,
         { "HTTP_IDEMPOTENCY_KEY" => key.idempotency_key }
       expect(last_response.status).to eq(201)
@@ -67,13 +57,7 @@ RSpec.describe "api.rb" do
     end
 
     it "passes for keys with a stale locked_at" do
-      key = IdempotencyKey.create(
-        idempotency_key: key_val,
-        locked_at:       Time.now - IDEMPOTENCY_KEY_LOCK_TIMEOUT - 1,
-        recovery_point:  RECOVERY_POINT_STARTED,
-        request_params:  Sequel.pg_jsonb(VALID_PARAMS),
-        user_id:         user.id,
-      )
+      key = create_key(locked_at: Time.now - IDEMPOTENCY_KEY_LOCK_TIMEOUT - 1)
       post "/rides", VALID_PARAMS,
         { "HTTP_IDEMPOTENCY_KEY" => key.idempotency_key }
       expect(last_response.status).to eq(201)
@@ -121,13 +105,7 @@ RSpec.describe "api.rb" do
     end
 
     it "denies requests where parameters don't match on an existing key" do
-      key = IdempotencyKey.create(
-        idempotency_key: key_val,
-        locked_at:       nil,
-        recovery_point:  RECOVERY_POINT_STARTED,
-        request_params:  Sequel.pg_jsonb(VALID_PARAMS),
-        user_id:         user.id,
-      )
+      key = create_key
       post "/rides", VALID_PARAMS.merge("origin_lat" => 10.0),
         { "HTTP_IDEMPOTENCY_KEY" => key.idempotency_key }
       expect(last_response.status).to eq(409)
@@ -136,13 +114,7 @@ RSpec.describe "api.rb" do
     end
 
     it "denies requests that have an equivalent in flight" do
-      key = IdempotencyKey.create(
-        idempotency_key: key_val,
-        locked_at:       Time.now,
-        recovery_point:  RECOVERY_POINT_STARTED,
-        request_params:  Sequel.pg_jsonb(VALID_PARAMS),
-        user_id:         user.id,
-      )
+      key = create_key(locked_at: Time.now)
       post "/rides", VALID_PARAMS,
         { "HTTP_IDEMPOTENCY_KEY" => key.idempotency_key }
       expect(last_response.status).to eq(409)
@@ -160,6 +132,16 @@ RSpec.describe "api.rb" do
     DB.run("TRUNCATE idempotency_keys CASCADE")
     DB.run("TRUNCATE rides CASCADE")
     DB.run("TRUNCATE staged_jobs CASCADE")
+  end
+
+  private def create_key(params = {})
+    IdempotencyKey.create({
+      idempotency_key: key_val,
+      locked_at:       nil,
+      recovery_point:  RECOVERY_POINT_STARTED,
+      request_params:  Sequel.pg_jsonb(VALID_PARAMS),
+      user_id:         user.id,
+    }.merge(params))
   end
 
   private def key_val
