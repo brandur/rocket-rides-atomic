@@ -30,7 +30,7 @@ RSpec.describe "api.rb" do
   describe "idempotency keys and recovery" do
     it "passes for a new key" do
       post "/rides", VALID_PARAMS,
-        { "HTTP_IDEMPOTENCY_KEY" => key_val }
+        headers.merge({ "HTTP_IDEMPOTENCY_KEY" => key_val })
       expect(last_response.status).to eq(201)
       expect(unwrap_ok(last_response.body)).to eq(Messages.ok)
     end
@@ -43,7 +43,7 @@ RSpec.describe "api.rb" do
         response_body:  body,
       )
       post "/rides", VALID_PARAMS,
-        { "HTTP_IDEMPOTENCY_KEY" => key.idempotency_key }
+        headers.merge({ "HTTP_IDEMPOTENCY_KEY" => key.idempotency_key })
       expect(last_response.status).to eq(201)
       expect(unwrap_ok(last_response.body)).to eq("hello")
     end
@@ -51,7 +51,7 @@ RSpec.describe "api.rb" do
     it "passes for keys that are unlocked" do
       key = create_key(locked_at: nil)
       post "/rides", VALID_PARAMS,
-        { "HTTP_IDEMPOTENCY_KEY" => key.idempotency_key }
+        headers.merge({ "HTTP_IDEMPOTENCY_KEY" => key.idempotency_key })
       expect(last_response.status).to eq(201)
       expect(unwrap_ok(last_response.body)).to eq(Messages.ok)
     end
@@ -59,12 +59,22 @@ RSpec.describe "api.rb" do
     it "passes for keys with a stale locked_at" do
       key = create_key(locked_at: Time.now - IDEMPOTENCY_KEY_LOCK_TIMEOUT - 1)
       post "/rides", VALID_PARAMS,
-        { "HTTP_IDEMPOTENCY_KEY" => key.idempotency_key }
+        headers.merge({ "HTTP_IDEMPOTENCY_KEY" => key.idempotency_key })
       expect(last_response.status).to eq(201)
       expect(unwrap_ok(last_response.body)).to eq(Messages.ok)
     end
 
     it "stores results for a permanent failure" do
+      key = create_key
+      post "/rides", VALID_PARAMS,
+        headers.merge({
+          # this user is created by up.rb
+          "HTTP_AUTHORIZATION"   => "user-bad-source@example.com",
+          "HTTP_IDEMPOTENCY_KEY" => key.idempotency_key,
+        })
+      expect(last_response.status).to eq(402)
+      expect(unwrap_error(last_response.body)).to \
+        eq(Messages.error_payment(error: "Your card was declined."))
     end
   end
 
@@ -72,7 +82,7 @@ RSpec.describe "api.rb" do
     it "continues from #{RECOVERY_POINT_STARTED}" do
       key = create_key(recovery_point: RECOVERY_POINT_STARTED)
       post "/rides", VALID_PARAMS,
-        { "HTTP_IDEMPOTENCY_KEY" => key.idempotency_key }
+        headers.merge({ "HTTP_IDEMPOTENCY_KEY" => key.idempotency_key })
       expect(last_response.status).to eq(201)
       expect(unwrap_ok(last_response.body)).to eq(Messages.ok)
     end
@@ -88,7 +98,7 @@ RSpec.describe "api.rb" do
       ))
 
       post "/rides", VALID_PARAMS,
-        { "HTTP_IDEMPOTENCY_KEY" => key.idempotency_key }
+        headers.merge({ "HTTP_IDEMPOTENCY_KEY" => key.idempotency_key })
       expect(last_response.status).to eq(201)
       expect(unwrap_ok(last_response.body)).to eq(Messages.ok)
     end
@@ -96,7 +106,7 @@ RSpec.describe "api.rb" do
     it "continues from #{RECOVERY_POINT_CHARGE_CREATED}" do
       key = create_key(recovery_point: RECOVERY_POINT_CHARGE_CREATED)
       post "/rides", VALID_PARAMS,
-        { "HTTP_IDEMPOTENCY_KEY" => key.idempotency_key }
+        headers.merge({ "HTTP_IDEMPOTENCY_KEY" => key.idempotency_key })
       expect(last_response.status).to eq(201)
       expect(unwrap_ok(last_response.body)).to eq(Messages.ok)
     end
@@ -105,7 +115,7 @@ RSpec.describe "api.rb" do
   describe "failure" do
     it "denies requests that are missing a key" do
       post "/rides", VALID_PARAMS,
-        { "HTTP_IDEMPOTENCY_KEY" => "" }
+        headers.merge({ "HTTP_IDEMPOTENCY_KEY" => "" })
       expect(last_response.status).to eq(400)
       expect(unwrap_error(last_response.body)).to \
         eq(Messages.error_key_required)
@@ -113,7 +123,7 @@ RSpec.describe "api.rb" do
 
     it "denies requests that have a key that's too short" do
       post "/rides", VALID_PARAMS,
-        { "HTTP_IDEMPOTENCY_KEY" => "xxx" }
+        headers.merge({ "HTTP_IDEMPOTENCY_KEY" => "xxx" })
       expect(last_response.status).to eq(400)
       expect(unwrap_error(last_response.body)).to \
         eq(Messages.error_key_too_short)
@@ -121,7 +131,7 @@ RSpec.describe "api.rb" do
 
     it "denies requests that are missing parameters" do
       post "/rides", {},
-        { "HTTP_IDEMPOTENCY_KEY" => key_val }
+        headers.merge({ "HTTP_IDEMPOTENCY_KEY" => key_val })
       expect(last_response.status).to eq(422)
       expect(unwrap_error(last_response.body)).to \
         eq(Messages.error_require_param(key: "origin_lat"))
@@ -130,7 +140,7 @@ RSpec.describe "api.rb" do
     it "denies requests where parameters don't match on an existing key" do
       key = create_key
       post "/rides", VALID_PARAMS.merge("origin_lat" => 10.0),
-        { "HTTP_IDEMPOTENCY_KEY" => key.idempotency_key }
+        headers.merge({ "HTTP_IDEMPOTENCY_KEY" => key.idempotency_key })
       expect(last_response.status).to eq(409)
       expect(unwrap_error(last_response.body)).to \
         eq(Messages.error_params_mismatch)
@@ -139,7 +149,7 @@ RSpec.describe "api.rb" do
     it "denies requests that have an equivalent in flight" do
       key = create_key(locked_at: Time.now)
       post "/rides", VALID_PARAMS,
-        { "HTTP_IDEMPOTENCY_KEY" => key.idempotency_key }
+        headers.merge({ "HTTP_IDEMPOTENCY_KEY" => key.idempotency_key })
       expect(last_response.status).to eq(409)
       expect(unwrap_error(last_response.body)).to \
         eq(Messages.error_request_in_progress)
@@ -165,6 +175,12 @@ RSpec.describe "api.rb" do
       request_params:  Sequel.pg_jsonb(VALID_PARAMS),
       user_id:         user.id,
     }.merge(params))
+  end
+
+  private def headers
+    # The demo API trusts that we are who we say we are. This user is created
+    # by up.rb.
+    { "HTTP_AUTHORIZATION" => "user@example.com" }
   end
 
   private def key_val

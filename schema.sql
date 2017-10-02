@@ -39,6 +39,9 @@ CREATE TABLE users (
         CHECK (char_length(stripe_customer_id) <= 50)
 );
 
+CREATE INDEX users_email
+    ON users (email);
+
 --
 -- Now that we have a users table, add a foreign key
 -- constraint to idempotency_keys which we created above.

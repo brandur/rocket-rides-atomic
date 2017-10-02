@@ -21,9 +21,6 @@ post "/rides" do
   key_val = validate_idempotency_key(request)
   params = validate_params(request)
 
-  puts "Idempotency key: #{key_val}"
-  puts "Params: #{params}"
-
   # may be created on this request or retrieved if it already exists
   key = nil
 
@@ -61,7 +58,6 @@ post "/rides" do
         request_params:  Sequel.pg_jsonb(params),
         user_id:         user.id,
       )
-      puts "Created idempotency key ID #{key.id}"
     end
   end
 
@@ -114,16 +110,19 @@ post "/rides" do
             customer:    user.stripe_customer_id,
             description: "Charge for ride #{ride.id}",
           )
-        rescue Stripe::InvalidRequestError
-          # TODO: handle PERMANENT failure
+        rescue Stripe::CardError
+          # Sets the response on the key and short circuits execution by
+          # sending execution right to 'finished'.
+          next(Response.new(402, wrap_error(Messages.error_payment(error: $!.message))))
+        rescue Stripe::Error
+          next(Response.new(503, wrap_error(Messages.error_payment_generic)))
+        else
+          ride.update(stripe_charge_id: charge.id)
         end
-
-        # within the transaction, update our ride and key
-        ride.update(stripe_charge_id: charge.id)
       end
 
     when RECOVERY_POINT_CHARGE_CREATED
-      atomic_phase(key, new_recovery_point: RECOVERY_POINT_FINISHED) do
+      atomic_phase(key, new_recovery_point: nil) do
         # Send a receipt asynchronously by adding an entry to the staged_jobs
         # table. By funneling the job through Postgres, we make this operation
         # transaction-safe.
@@ -135,14 +134,7 @@ post "/rides" do
             user_id:  user.id
           })
         )
-
-        key.update(
-          locked_at: nil,
-          response_code: 201,
-          response_body: Sequel.pg_jsonb({
-            message: Messages.ok
-          })
-        )
+        Response.new(201, wrap_ok(Messages.ok))
       end
 
     when RECOVERY_POINT_FINISHED
@@ -205,6 +197,10 @@ module Messages
     "Payment accepted. Your pilot is on their way!"
   end
 
+  def self.error_auth_required
+    "Please specify credentials in the Authorization header."
+  end
+
   def self.error_key_required
     "Please specify an idempotency key with the Idempotency-Key header."
   end
@@ -218,6 +214,14 @@ module Messages
     "There was a mismatch between this request's parameters and the " \
       "parameters of a previously stored request with the same " \
       "Idempotency-Key."
+  end
+
+  def self.error_payment(error:)
+    "Error from payment processor: #{error}"
+  end
+
+  def self.error_payment_generic
+    "Error from payment processor. Please contact support."
   end
 
   def self.error_request_in_progress
@@ -241,6 +245,16 @@ module Messages
   end
 end
 
+class Response
+  attr_accessor :data
+  attr_accessor :status
+
+  def initialize(status, data)
+    @status = status
+    @data = data
+  end
+end
+
 # A simple wrapper for our atomic phases. We're not doing anything special here
 # -- just defining some common transaction options and consolidating how we
 # recover from various types of transactional failures.
@@ -248,11 +262,18 @@ def atomic_phase(key, new_recovery_point:, &block)
   error = false
   begin
     DB.transaction(isolation: :serializable) do
-      block.call
+      # A block is allowed to return a response which will short circuit
+      # execution and push the key to "finished" state. Useful especially for
+      # errors.
+      response = block.call
 
       # update to the given recovery point *inside* the transaction
-      if !key.nil? && !new_recovery_point.nil?
-        key.update(recovery_point: new_recovery_point)
+      if !key.nil?
+        if !response.nil? && response.is_a?(Response)
+          set_key_response(key, response)
+        elsif !new_recovery_point.nil?
+          key.update(recovery_point: new_recovery_point)
+        end
       end
     end
   rescue Sequel::SerializationFailure
@@ -273,10 +294,21 @@ def atomic_phase(key, new_recovery_point:, &block)
   end
 end
 
-def authenticate_user(_request)
+def authenticate_user(request)
   # This is obviously something you shouldn't do in a real application, but for
-  # now we're just going to authenticate all requests as our test user.
-  User.first(id: 1)
+  # now we're just going to trust that the user is whoever they said they were
+  # from an email in the `Authorization` header.
+  auth = request.env["HTTP_AUTHORIZATION"]
+  User.first(email: auth)
+end
+
+def set_key_response(key, response)
+  key.update(
+    locked_at: nil,
+    recovery_point: RECOVERY_POINT_FINISHED,
+    response_code: response.status,
+    response_body: response.data
+  )
 end
 
 # Wraps a message in the standard structure that we send back for error
@@ -292,8 +324,6 @@ def wrap_ok(message)
 end
 
 def validate_idempotency_key(request)
-  # In Rack, headers are accessed from an key named after them and prefixed
-  # with `HTTP_`.
   key = request.env["HTTP_IDEMPOTENCY_KEY"]
 
   if key.nil? || key.empty?
