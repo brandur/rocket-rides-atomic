@@ -9,6 +9,7 @@ gem "stripe"
 
 group :development do
   gem "pry"
+  gem "pry-byebug"
   gem "rack-test"
   gem "rake"
   gem "rspec"
