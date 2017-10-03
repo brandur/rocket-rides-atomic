@@ -119,7 +119,7 @@ post "/rides" do
           # Sets the response on the key and short circuits execution by
           # sending execution right to 'finished'.
           Response.new(402, wrap_error(Messages.error_payment(error: $!.message)))
-        rescue Stripe::Error
+        rescue Stripe::StripeError
           Response.new(503, wrap_error(Messages.error_payment_generic))
         else
           ride.update(stripe_charge_id: charge.id)
@@ -215,6 +215,11 @@ module Messages
     "Please specify credentials in the Authorization header."
   end
 
+  def self.error_internal
+    "Internal server error. Please retry the request periodically with the " \
+      "same Idempotency-Key until it succeeds."
+  end
+
   def self.error_key_required
     "Please specify an idempotency key with the Idempotency-Key header."
   end
@@ -256,6 +261,11 @@ module Messages
 
   def self.error_require_param(key:)
     "Please specify parameter '#{key}'."
+  end
+
+  def self.error_retry
+    "Conflict detected with a concurrent request. Please retry with the " \
+      "same Idmpotency-Key."
   end
 end
 
@@ -329,8 +339,12 @@ def atomic_phase(key, &block)
       end
     end
   rescue Sequel::SerializationFailure
-    # unlock the key and tell the user to retry
+    # you could possibly retry this error instead
     error = true
+    halt 429, JSON.generate(wrap_error(Messages.error_retry))
+  rescue
+    error = true
+    halt 500, JSON.generate(wrap_error(Messages.error_internal))
   ensure
     # If we're leaving under an error condition, try to unlock the idempotency
     # key right away so that another request can try again.
@@ -349,7 +363,7 @@ end
 def authenticate_user(request)
   auth = request.env["HTTP_AUTHORIZATION"]
   if auth.nil? || auth.empty?
-    halt 401, JSON.generate(wrap_error(Messages.error_auth_required)) 
+    halt 401, JSON.generate(wrap_error(Messages.error_auth_required))
   end
 
   # This is obviously something you shouldn't do in a real application, but for

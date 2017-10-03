@@ -170,6 +170,38 @@ RSpec.describe "api.rb" do
       expect(unwrap_error(last_response.body)).to \
         eq(Messages.error_request_in_progress)
     end
+
+    it "unlocks a key and returns 429 on a serialization failure" do
+      expect(Stripe::Charge).to receive(:create) do
+        raise Sequel::SerializationFailure, "Serialization failure."
+      end
+
+      key = create_key
+      post "/rides", VALID_PARAMS,
+        headers.merge({ "HTTP_IDEMPOTENCY_KEY" => key.idempotency_key })
+      expect(last_response.status).to eq(429)
+      expect(unwrap_error(last_response.body)).to \
+        eq(Messages.error_retry)
+
+      key.reload
+      expect(key.locked_at).to be_nil
+    end
+
+    it "unlocks a key and returns 500 on an internal error" do
+      expect(Stripe::Charge).to receive(:create) do
+        raise "Internal server error!"
+      end
+
+      key = create_key
+      post "/rides", VALID_PARAMS,
+        headers.merge({ "HTTP_IDEMPOTENCY_KEY" => key.idempotency_key })
+      expect(last_response.status).to eq(500)
+      expect(unwrap_error(last_response.body)).to \
+        eq(Messages.error_internal)
+
+      key.reload
+      expect(key.locked_at).to be_nil
+    end
   end
 
   #
