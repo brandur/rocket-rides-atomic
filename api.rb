@@ -61,7 +61,7 @@ post "/rides" do
     end
 
     # no response and no need to set a recovery point
-    nil
+    NoOp.new
   end
 
   # may be created on this request or retrieved if recovering a partially
@@ -255,14 +255,32 @@ module Messages
   end
 end
 
+# Represents an action to perform a no-op. One possible option for a return
+# from an #atomic_phase block.
+class NoOp
+  def call(_key)
+    # no-op
+  end
+end
+
+# Represents an action to set a new recovery point. One possible option for a
+# return from an #atomic_phase block.
 class RecoveryPoint
   attr_accessor :name
 
   def initialize(name)
     self.name = name
   end
+
+  def call(key)
+    raise ArgumentError, "key must be provided" if key.nil?
+    key.update(recovery_point: name)
+  end
 end
 
+# Represents an action to set a new API response (which will be stored onto an
+# idempotency key). One  possible option for a return from an #atomic_phase
+# block.
 class Response
   attr_accessor :data
   attr_accessor :status
@@ -270,6 +288,16 @@ class Response
   def initialize(status, data)
     self.status = status
     self.data = data
+  end
+
+  def call(key)
+    raise ArgumentError, "key must be provided" if key.nil?
+    key.update(
+      locked_at: nil,
+      recovery_point: RECOVERY_POINT_FINISHED,
+      response_code: status,
+      response_body: data
+    )
   end
 end
 
@@ -285,13 +313,11 @@ def atomic_phase(key, &block)
       # errors.
       ret = block.call
 
-      case ret
-      when RecoveryPoint then set_key_recovery_point(key, ret)
-      when Response then set_key_response(key, ret)
-      when nil then {} # no response or new recovery needed
+      if ret.is_a?(NoOp) || ret.is_a?(RecoveryPoint) || ret.is_a?(Response)
+        ret.call(key)
       else
         raise "Blocks to #atomic_phase should return one of " \
-          "RecoveryPoint, Response, or nil"
+          "NoOp, RecoveryPoint, or Response"
       end
     end
   rescue Sequel::SerializationFailure
@@ -327,25 +353,6 @@ def authenticate_user(request)
   end
 
   user
-end
-
-def set_key_recovery_point(key, recovery_point)
-  raise ArgumentError, "key must be provided" if key.nil?
-  raise ArgumentError, "recovery_point must be an instance of RecoveryPoint" \
-    unless recovery_point.is_a?(RecoveryPoint)
-  key.update(recovery_point: recovery_point.name)
-end
-
-def set_key_response(key, response)
-  raise ArgumentError, "key must be provided" if key.nil?
-  raise ArgumentError, "response must be an instance of Response" \
-    unless response.is_a?(Response)
-  key.update(
-    locked_at: nil,
-    recovery_point: RECOVERY_POINT_FINISHED,
-    response_code: response.status,
-    response_body: response.data
-  )
 end
 
 # Wraps a message in the standard structure that we send back for error
