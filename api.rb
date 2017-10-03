@@ -47,7 +47,9 @@ post "/rides" do
         idempotency_key: key_val,
         locked_at:       Time.now,
         recovery_point:  RECOVERY_POINT_STARTED,
+        request_method:  request.request_method,
         request_params:  Sequel.pg_jsonb(params),
+        request_path:    request.path_info,
         user_id:         user.id,
       )
     end

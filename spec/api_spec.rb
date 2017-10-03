@@ -220,7 +220,9 @@ RSpec.describe "api.rb" do
       idempotency_key: key_val,
       locked_at:       nil,
       recovery_point:  RECOVERY_POINT_STARTED,
+      request_method:  "POST",
       request_params:  Sequel.pg_jsonb(VALID_PARAMS),
+      request_path:    "/rides",
       user_id:         user.id,
     }.merge(params))
   end
