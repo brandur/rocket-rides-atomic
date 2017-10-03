@@ -30,7 +30,7 @@ post "/rides" do
   # close proximity, one of the two will be aborted by Postgres because we're
   # using a transaction with SERIALIZABLE isolation level. It may not look it,
   # but this code is safe from races.
-  atomic_phase(key, new_recovery_point: nil) do
+  atomic_phase(key) do
     key = IdempotencyKey.first(user_id: user.id, idempotency_key: key_val)
 
     if key
@@ -59,6 +59,9 @@ post "/rides" do
         user_id:         user.id,
       )
     end
+
+    # no response and no need to set a recovery point
+    nil
   end
 
   # may be created on this request or retrieved if recovering a partially
@@ -68,7 +71,7 @@ post "/rides" do
   loop do
     case key.recovery_point
     when RECOVERY_POINT_STARTED
-      atomic_phase(key, new_recovery_point: RECOVERY_POINT_RIDE_CREATED) do
+      atomic_phase(key) do
         ride = Ride.create(
           idempotency_key_id: key.id,
           origin_lat:         params["origin_lat"],
@@ -88,10 +91,12 @@ post "/rides" do
           resource_type: "ride",
           user_id:       user.id,
         )
+
+        RecoveryPoint.new(RECOVERY_POINT_RIDE_CREATED)
       end
 
     when RECOVERY_POINT_RIDE_CREATED
-      atomic_phase(key, new_recovery_point: RECOVERY_POINT_CHARGE_CREATED) do
+      atomic_phase(key) do
         # retrieve a ride record if necessary (i.e. we're recovering)
         ride = Ride.first(idempotency_key_id: key.id) if ride.nil?
 
@@ -113,16 +118,17 @@ post "/rides" do
         rescue Stripe::CardError
           # Sets the response on the key and short circuits execution by
           # sending execution right to 'finished'.
-          next(Response.new(402, wrap_error(Messages.error_payment(error: $!.message))))
+          Response.new(402, wrap_error(Messages.error_payment(error: $!.message)))
         rescue Stripe::Error
-          next(Response.new(503, wrap_error(Messages.error_payment_generic)))
+          Response.new(503, wrap_error(Messages.error_payment_generic))
         else
           ride.update(stripe_charge_id: charge.id)
+          RecoveryPoint.new(RECOVERY_POINT_CHARGE_CREATED)
         end
       end
 
     when RECOVERY_POINT_CHARGE_CREATED
-      atomic_phase(key, new_recovery_point: nil) do
+      atomic_phase(key) do
         # Send a receipt asynchronously by adding an entry to the staged_jobs
         # table. By funneling the job through Postgres, we make this operation
         # transaction-safe.
@@ -249,35 +255,43 @@ module Messages
   end
 end
 
+class RecoveryPoint
+  attr_accessor :name
+
+  def initialize(name)
+    self.name = name
+  end
+end
+
 class Response
   attr_accessor :data
   attr_accessor :status
 
   def initialize(status, data)
-    @status = status
-    @data = data
+    self.status = status
+    self.data = data
   end
 end
 
 # A simple wrapper for our atomic phases. We're not doing anything special here
 # -- just defining some common transaction options and consolidating how we
 # recover from various types of transactional failures.
-def atomic_phase(key, new_recovery_point:, &block)
+def atomic_phase(key, &block)
   error = false
   begin
     DB.transaction(isolation: :serializable) do
       # A block is allowed to return a response which will short circuit
       # execution and push the key to "finished" state. Useful especially for
       # errors.
-      response = block.call
+      ret = block.call
 
-      # update to the given recovery point *inside* the transaction
-      if !key.nil?
-        if !response.nil? && response.is_a?(Response)
-          set_key_response(key, response)
-        elsif !new_recovery_point.nil?
-          key.update(recovery_point: new_recovery_point)
-        end
+      case ret
+      when RecoveryPoint then set_key_recovery_point(key, ret)
+      when Response then set_key_response(key, ret)
+      when nil then {} # no response or new recovery needed
+      else
+        raise "Blocks to #atomic_phase should return one of " \
+          "RecoveryPoint, Response, or nil"
       end
     end
   rescue Sequel::SerializationFailure
@@ -315,7 +329,17 @@ def authenticate_user(request)
   user
 end
 
+def set_key_recovery_point(key, recovery_point)
+  raise ArgumentError, "key must be provided" if key.nil?
+  raise ArgumentError, "recovery_point must be an instance of RecoveryPoint" \
+    unless recovery_point.is_a?(RecoveryPoint)
+  key.update(recovery_point: recovery_point.name)
+end
+
 def set_key_response(key, response)
+  raise ArgumentError, "key must be provided" if key.nil?
+  raise ArgumentError, "response must be an instance of Response" \
+    unless response.is_a?(Response)
   key.update(
     locked_at: nil,
     recovery_point: RECOVERY_POINT_FINISHED,
