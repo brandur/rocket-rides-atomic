@@ -105,7 +105,7 @@ post "/rides" do
         # represent the cost in time and jetfuel on the part of our pilots.
         begin
           charge = Stripe::Charge.create(
-            amount:      2000,
+            amount:      20_00,
             currency:    "usd",
             customer:    user.stripe_customer_id,
             description: "Charge for ride #{ride.id}",
@@ -129,7 +129,7 @@ post "/rides" do
         DB[:staged_jobs].insert(
           job_name: "send_ride_receipt",
           job_args: Sequel.pg_jsonb({
-            amount:   2000,
+            amount:   20_00,
             currency: "usd",
             user_id:  user.id
           })
