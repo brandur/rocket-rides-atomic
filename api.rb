@@ -197,6 +197,10 @@ module Messages
     "Payment accepted. Your pilot is on their way!"
   end
 
+  def self.error_auth_invalid
+    "Credentials in Authorization were invalid."
+  end
+
   def self.error_auth_required
     "Please specify credentials in the Authorization header."
   end
@@ -295,11 +299,20 @@ def atomic_phase(key, new_recovery_point:, &block)
 end
 
 def authenticate_user(request)
+  auth = request.env["HTTP_AUTHORIZATION"]
+  if auth.nil? || auth.empty?
+    halt 401, JSON.generate(wrap_error(Messages.error_auth_required)) 
+  end
+
   # This is obviously something you shouldn't do in a real application, but for
   # now we're just going to trust that the user is whoever they said they were
   # from an email in the `Authorization` header.
-  auth = request.env["HTTP_AUTHORIZATION"]
-  User.first(email: auth)
+  user = User.first(email: auth)
+  if user.nil?
+    halt 401, JSON.generate(wrap_error(Messages.error_auth_invalid))
+  end
+
+  user
 end
 
 def set_key_response(key, response)

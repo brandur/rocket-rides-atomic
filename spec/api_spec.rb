@@ -113,6 +113,22 @@ RSpec.describe "api.rb" do
   end
 
   describe "failure" do
+    it "denies requests that are missing authentication" do
+      post "/rides", VALID_PARAMS,
+        headers.merge({ "HTTP_AUTHORIZATION" => "" })
+      expect(last_response.status).to eq(401)
+      expect(unwrap_error(last_response.body)).to \
+        eq(Messages.error_auth_required)
+    end
+
+    it "denies requests with invalid authentication" do
+      post "/rides", VALID_PARAMS,
+        headers.merge({ "HTTP_AUTHORIZATION" => "bad-user@example.com" })
+      expect(last_response.status).to eq(401)
+      expect(unwrap_error(last_response.body)).to \
+        eq(Messages.error_auth_invalid)
+    end
+
     it "denies requests that are missing a key" do
       post "/rides", VALID_PARAMS,
         headers.merge({ "HTTP_IDEMPOTENCY_KEY" => "" })
