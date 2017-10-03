@@ -158,23 +158,7 @@ post "/rides" do
 end
 
 #
-# models
-#
-
-class AuditRecord < Sequel::Model
-end
-
-class IdempotencyKey < Sequel::Model
-end
-
-class Ride < Sequel::Model
-end
-
-class User < Sequel::Model
-end
-
-#
-# helpers
+# constants
 #
 
 # Names of audit record actions.
@@ -197,6 +181,26 @@ RECOVERY_POINT_STARTED        = "started"
 RECOVERY_POINT_RIDE_CREATED   = "ride_created"
 RECOVERY_POINT_CHARGE_CREATED = "charge_created"
 RECOVERY_POINT_FINISHED       = "finished"
+
+#
+# models
+#
+
+class AuditRecord < Sequel::Model
+end
+
+class IdempotencyKey < Sequel::Model
+end
+
+class Ride < Sequel::Model
+end
+
+class User < Sequel::Model
+end
+
+#
+# other modules/classes
+#
 
 module Messages
   def self.ok
@@ -300,6 +304,10 @@ class Response
     )
   end
 end
+
+#
+# helpers
+#
 
 # A simple wrapper for our atomic phases. We're not doing anything special here
 # -- just defining some common transaction options and consolidating how we
