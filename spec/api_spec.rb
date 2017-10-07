@@ -6,8 +6,8 @@ ENV["DATABASE_URL"] = "postgres://localhost/rocket-rides-atomic-test"
 ENV["STRIPE_API_KEY"] = "sk_test_BQokikJOvBiI2HlWgH4olfQ2"
 ENV["RACK_ENV"] = "test"
 
-require "./api"
-require "./up"
+require_relative "../api"
+require_relative "../up"
 
 VALID_PARAMS = {
   "origin_lat" => 0.0,

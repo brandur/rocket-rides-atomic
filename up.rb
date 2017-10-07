@@ -5,8 +5,7 @@
 require "sequel"
 require "stripe"
 
-DB = Sequel.connect(ENV["DATABASE_URL"] || abort("need DATABASE_URL"))
-Stripe.api_key = ENV["STRIPE_API_KEY"] || abort("need STRIPE_API_KEY")
+require_relative "./config"
 
 USERS = [
   [1, "user@example.com",            "tok_visa"],
