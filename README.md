@@ -31,11 +31,16 @@ If you look in `Procfile`, you'll see these processes:
   to do something.
 
 After you run `forego start` you should see the `simulator` issuing jobs right
-away. Some of these will succeed which gives the `enqueuer` work to do. If you
-leave the programs running long enough, the `completer` will also kick in and
-start to finish up any of the `simulator`'s failed API requests (the
-`completer` only starts completing jobs that are at least five minutes old to
-give the original client a chance to retry them first).
+away. Some of these will succeed, and that will give the `enqueuer` something
+to do.
+
+If you leave the programs running long enough, the `completer` will kick in and
+start to finish up any of the `simulator`'s failed API requests. It only starts
+completing jobs that are at least five minutes old to give the original client
+a chance to retry them first.
+
+If you leave the programs running _really_ long, the `reaper` will kick in and
+start removing keys that are at least 24 hours old.
 
 ## Setup
 
