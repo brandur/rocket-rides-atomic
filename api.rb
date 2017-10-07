@@ -39,9 +39,10 @@ class API < Sinatra::Base
           halt 409, JSON.generate(wrap_error(Messages.error_request_in_progress))
         end
 
-        # Lock the key unless the request is already finished.
+        # Lock the key and update latest run unless the request is already
+        # finished.
         if key.recovery_point != RECOVERY_POINT_FINISHED
-          key.update(locked_at: Time.now)
+          key.update(last_run_at: Time.now, locked_at: Time.now)
         end
       else
         key = IdempotencyKey.create(
@@ -159,6 +160,12 @@ end
 
 # Names of audit record actions.
 AUDIT_RIDE_CREATED = "ride.created"
+
+# Number of seconds passed since the last try on an idempotency key after which
+# the completer will pick it up. This exists so that the completer isn't
+# continually try to churn through the same requests that are failing over and
+# over again.
+IDEMPOTENCY_KEY_COMPLETER_LAST_RUN_THRESHOLD = 60
 
 # Number of seconds passed after which we consider an unfinished idempotency
 # key to be eligible for working by the completer.
@@ -341,9 +348,11 @@ def atomic_phase(key, &block)
   rescue Sequel::SerializationFailure
     # you could possibly retry this error instead
     error = true
+    raise if settings.raise_errors
     halt 429, JSON.generate(wrap_error(Messages.error_retry))
   rescue
     error = true
+    raise if settings.raise_errors
     halt 500, JSON.generate(wrap_error(Messages.error_internal))
   ensure
     # If we're leaving under an error condition, try to unlock the idempotency

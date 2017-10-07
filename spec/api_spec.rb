@@ -2,21 +2,9 @@ require "rack/test"
 require "rspec"
 require "securerandom"
 
-ENV["DATABASE_URL"] = "postgres://localhost/rocket-rides-atomic-test"
-ENV["STRIPE_API_KEY"] = "sk_test_BQokikJOvBiI2HlWgH4olfQ2"
-ENV["RACK_ENV"] = "test"
+require_relative "./spec_helper"
 
-require_relative "../api"
-require_relative "../up"
-
-VALID_PARAMS = {
-  "origin_lat" => 0.0,
-  "origin_lon" => 0.0,
-  "target_lat" => 0.0,
-  "target_lon" => 0.0,
-}
-
-RSpec.describe "api.rb" do
+RSpec.describe API do
   include Rack::Test::Methods
 
   def app
@@ -25,6 +13,7 @@ RSpec.describe "api.rb" do
 
   before do
     clear_database
+    suppress_stdout
   end
 
   describe "idempotency keys and recovery" do
@@ -177,11 +166,11 @@ RSpec.describe "api.rb" do
       end
 
       key = create_key
-      post "/rides", VALID_PARAMS,
-        headers.merge({ "HTTP_IDEMPOTENCY_KEY" => key.idempotency_key })
-      expect(last_response.status).to eq(429)
-      expect(unwrap_error(last_response.body)).to \
-        eq(Messages.error_retry)
+
+      expect do
+        post "/rides", VALID_PARAMS,
+          headers.merge({ "HTTP_IDEMPOTENCY_KEY" => key.idempotency_key })
+      end.to raise_error(Sequel::SerializationFailure)
 
       key.reload
       expect(key.locked_at).to be_nil
@@ -193,11 +182,11 @@ RSpec.describe "api.rb" do
       end
 
       key = create_key
-      post "/rides", VALID_PARAMS,
-        headers.merge({ "HTTP_IDEMPOTENCY_KEY" => key.idempotency_key })
-      expect(last_response.status).to eq(500)
-      expect(unwrap_error(last_response.body)).to \
-        eq(Messages.error_internal)
+
+      expect do
+        post "/rides", VALID_PARAMS,
+          headers.merge({ "HTTP_IDEMPOTENCY_KEY" => key.idempotency_key })
+      end.to raise_error(StandardError)
 
       key.reload
       expect(key.locked_at).to be_nil
@@ -208,33 +197,10 @@ RSpec.describe "api.rb" do
   # helpers
   #
 
-  private def clear_database
-    DB.run("TRUNCATE audit_records CASCADE")
-    DB.run("TRUNCATE idempotency_keys CASCADE")
-    DB.run("TRUNCATE rides CASCADE")
-    DB.run("TRUNCATE staged_jobs CASCADE")
-  end
-
-  private def create_key(params = {})
-    IdempotencyKey.create({
-      idempotency_key: key_val,
-      locked_at:       nil,
-      recovery_point:  RECOVERY_POINT_STARTED,
-      request_method:  "POST",
-      request_params:  Sequel.pg_jsonb(VALID_PARAMS),
-      request_path:    "/rides",
-      user_id:         user.id,
-    }.merge(params))
-  end
-
   private def headers
     # The demo API trusts that we are who we say we are. This user is created
     # by up.rb.
     { "HTTP_AUTHORIZATION" => "user@example.com" }
-  end
-
-  private def key_val
-    SecureRandom.uuid
   end
 
   private def unwrap_error(body)
@@ -247,9 +213,5 @@ RSpec.describe "api.rb" do
     data = JSON.parse(body, symbolize_names: true)
     expect(data).to have_key(:message)
     data[:message]
-  end
-
-  private def user
-    User.first(id: 1)
   end
 end
