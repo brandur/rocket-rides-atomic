@@ -19,8 +19,9 @@ class Reaper
     num_reaped = 0
 
     IdempotencyKey.where(Sequel.lit(
-      "created_at < ?",
-      Time.now - IDEMPOTENCY_KEY_REAP_TIMEOUT
+      "id IN (SELECT id FROM idempotency_keys WHERE created_at < ? LIMIT ?)",
+      Time.now - IDEMPOTENCY_KEY_REAP_TIMEOUT,
+      BATCH_SIZE
     )).delete
   end
 
