@@ -16,7 +16,7 @@ VALID_PARAMS = {
   "origin_lon" => 0.0,
   "target_lat" => 0.0,
   "target_lon" => 0.0,
-}
+}.freeze
 
 RSpec.configure do |config|
 end

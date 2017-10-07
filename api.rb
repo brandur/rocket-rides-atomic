@@ -5,11 +5,21 @@ require_relative "./config"
 
 class API < Sinatra::Base
   set :server, %w[puma]
+  set :show_exceptions, false
 
   post "/rides" do
     user = authenticate_user(request)
     key_val = validate_idempotency_key(request)
     params = validate_params(request)
+
+    # A special parameter that raises an error from within the stack so that we
+    # can simulate a failed request. It's parsed outside of #validate_params so
+    # that it's not stored to an idempotency key (we don't want it to fail the
+    # second time it's tried too).
+    raise_error = false
+    if request.POST.key?("raise_error")
+      raise_error = validate_params_bool(request, "raise_error")
+    end
 
     # may be created on this request or retrieved if it already exists
     key = nil
@@ -94,8 +104,10 @@ class API < Sinatra::Base
           ride = Ride.first(idempotency_key_id: key.id) if ride.nil?
 
           # if ride is still nil by this point, we have a bug
-          raise "Bug! Should have ride for key at #{RECOVERY_POINT_RIDE_CREATED}" \
+          raise "Bug! Should have ride for key at #{RECOVERY_POINT_RIDE_CREATED}." \
             if ride.nil?
+
+          raise "Simulated failed with `raise_error` param." if raise_error
 
           # Rocket Rides is still a new service, so during our prototype phase
           # we're going to give $20 fixed-cost rides to everyone, regardless of
@@ -166,7 +178,7 @@ IDEMPOTENCY_KEY_COMPLETER_LAST_RUN_THRESHOLD = 60
 
 # Number of seconds passed after which we consider an unfinished idempotency
 # key to be eligible for working by the completer.
-IDEMPOTENCY_KEY_COMPLETER_TIMEOUT = 3600
+IDEMPOTENCY_KEY_COMPLETER_TIMEOUT = 300
 
 # Number of seconds passed which we consider a held idempotency key lock to be
 # defunct and eligible to be locked again by a different API call. We try to
@@ -252,6 +264,10 @@ module Messages
 
   def self.error_request_in_progress
     "An API request with the same Idempotency-Key is already in progress."
+  end
+
+  def self.error_require_bool(key:)
+    "Parameter '#{key}' must be a boolean."
   end
 
   def self.error_require_float(key:)
@@ -419,6 +435,13 @@ def validate_params(request)
     "target_lat" => validate_params_lat(request, "target_lat"),
     "target_lon" => validate_params_lon(request, "target_lon"),
   }
+end
+
+def validate_params_bool(request, key)
+  val = validate_params_present(request, key)
+  return true if val == "true"
+  return false if val == "false"
+  halt 422, JSON.generate(wrap_error(Messages.error_require_bool(key: key)))
 end
 
 def validate_params_float(request, key)
