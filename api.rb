@@ -158,6 +158,10 @@ end
 # Names of audit record actions.
 AUDIT_RIDE_CREATED = "ride.created"
 
+# Number of seconds passed after which we consider an unfinished idempotency
+# key to be eligible for working by the completer.
+IDEMPOTENCY_KEY_COMPLETER_TIMEOUT = 3600
+
 # Number of seconds passed which we consider a held idempotency key lock to be
 # defunct and eligible to be locked again by a different API call. We try to
 # unlock keys on our various failure conditions, but software is buggy, and
@@ -434,3 +438,11 @@ def validate_params_present(request, key)
   return val if !val.nil? && !val.empty?
   halt 422, JSON.generate(wrap_error(Messages.error_require_param(key: key)))
 end
+
+#
+# run
+#
+
+#if __FILE__ == $0
+  #API.run!
+#end
