@@ -1,5 +1,4 @@
 require "rack/test"
-require "rspec"
 require "securerandom"
 
 require_relative "./spec_helper"

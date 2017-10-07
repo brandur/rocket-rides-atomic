@@ -1,6 +1,6 @@
 require "uri"
 
-require "./api"
+require_relative "./api"
 
 class Completer
   def run

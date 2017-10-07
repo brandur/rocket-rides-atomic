@@ -1,6 +1,12 @@
+require "rspec"
+require 'webmock/rspec'
+
 ENV["DATABASE_URL"] = "postgres://localhost/rocket-rides-atomic-test"
 ENV["STRIPE_API_KEY"] = "sk_test_BQokikJOvBiI2HlWgH4olfQ2"
 ENV["RACK_ENV"] = "test"
+
+# disabled for up.rb and most test suites
+WebMock.disable!
 
 require_relative "../api"
 require_relative "../up"

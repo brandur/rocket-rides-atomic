@@ -1,12 +1,17 @@
 GEM
   remote: https://rubygems.org/
   specs:
+    addressable (2.5.0)
+      public_suffix (~> 2.0, >= 2.0.2)
     byebug (9.0.6)
     coderay (1.1.1)
+    crack (0.4.3)
+      safe_yaml (~> 1.0.0)
     diff-lcs (1.2.5)
     excon (0.59.0)
     faraday (0.13.1)
       multipart-post (>= 1.2, < 3)
+    hashdiff (0.3.2)
     method_source (0.8.2)
     multipart-post (2.0.0)
     pg (0.18.3)
@@ -17,6 +22,7 @@ GEM
     pry-byebug (3.4.2)
       byebug (~> 9.0)
       pry (~> 0.10)
+    public_suffix (2.0.5)
     puma (3.2.0)
     rack (1.6.4)
     rack-protection (1.5.3)
@@ -37,6 +43,7 @@ GEM
       diff-lcs (>= 1.2.0, < 2.0)
       rspec-support (~> 3.4.0)
     rspec-support (3.4.0)
+    safe_yaml (1.0.4)
     sequel (5.0.0)
     sinatra (1.4.8)
       rack (~> 1.5)
@@ -46,6 +53,10 @@ GEM
     stripe (3.3.2)
       faraday (~> 0.9)
     tilt (2.0.6)
+    webmock (2.3.2)
+      addressable (>= 2.3.6)
+      crack (>= 0.3.2)
+      hashdiff
 
 PLATFORMS
   ruby
@@ -62,6 +73,7 @@ DEPENDENCIES
   sequel
   sinatra
   stripe
+  webmock
 
 BUNDLED WITH
-   1.12.5
+   1.14.6

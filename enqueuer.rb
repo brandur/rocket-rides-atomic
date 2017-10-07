@@ -1,4 +1,4 @@
-require "./api"
+require_relative "./api"
 
 class Enqueuer
   def run

@@ -1,7 +1,4 @@
-require "rspec"
-
 require_relative "./spec_helper"
-
 require_relative "../completer"
 
 RSpec.describe Completer do
