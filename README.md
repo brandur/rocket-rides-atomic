@@ -30,9 +30,9 @@ If you look in `Procfile`, you'll see these processes:
   simulate traffic against `api` and give `completer` and `enqueuer` a chance
   to do something.
 
-After you run `forego start` you should see the `simulator` issuing jobs right
-away. Some of these will succeed, and that will give the `enqueuer` something
-to do.
+After you run `forego start` you should see the `simulator` issuing jobs
+against `api` right away. Some of these will succeed, and that will give the
+`enqueuer` something to do.
 
 If you leave the programs running long enough, the `completer` will kick in and
 start to finish up any of the `simulator`'s failed API requests. It only starts
