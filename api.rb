@@ -1,8 +1,5 @@
 require "json"
-require "pg"
-require "sequel"
 require "sinatra"
-require "stripe"
 
 require_relative "./config"
 
@@ -128,7 +125,7 @@ class API < Sinatra::Base
           # Send a receipt asynchronously by adding an entry to the staged_jobs
           # table. By funneling the job through Postgres, we make this
           # operation transaction-safe.
-          DB[:staged_jobs].insert(
+          StagedJob.insert(
             job_name: "send_ride_receipt",
             job_args: Sequel.pg_jsonb({
               amount:   20_00,
@@ -200,6 +197,9 @@ class IdempotencyKey < Sequel::Model
 end
 
 class Ride < Sequel::Model
+end
+
+class StagedJob < Sequel::Model
 end
 
 class User < Sequel::Model

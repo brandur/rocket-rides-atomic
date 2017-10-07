@@ -1,5 +1,3 @@
-require "pg"
-require "sequel"
 require "uri"
 
 require "./api"
