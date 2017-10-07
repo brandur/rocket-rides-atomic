@@ -23,6 +23,9 @@ If you look in `Procfile`, you'll see these processes:
   completion (after a grace period to give the user a change to do it first).
 * `enqueuer`: Moves [transactionally-staged jobs][jobs] out of the database and
   over into a real job queue to be worked.
+* `reaper`: Reaps idempotency keys after some extended period wherein failed
+  API requests would have been retried by a client or the `completer` a number
+  of times already.
 * `simulator`: Randomly issues requests that will either succeed or fail to
   simulate traffic against `api` and give `completer` and `enqueuer` a chance
   to do something.

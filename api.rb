@@ -192,6 +192,12 @@ IDEMPOTENCY_KEY_LOCK_TIMEOUT = 90
 # something like the Shannon entropy equation.
 IDEMPOTENCY_KEY_MIN_LENGTH = 20
 
+# Number of seconds after which we reap idempotency keys. This should be a much
+# greater number than whatever a reasonable period is for a client to have
+# retried the request a number of times or the completer to have tried it a few
+# times.
+IDEMPOTENCY_KEY_REAP_TIMEOUT = 24 * 3600
+
 # Names of recovery points.
 RECOVERY_POINT_STARTED        = "started"
 RECOVERY_POINT_RIDE_CREATED   = "ride_created"
