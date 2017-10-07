@@ -196,7 +196,13 @@ IDEMPOTENCY_KEY_MIN_LENGTH = 20
 # greater number than whatever a reasonable period is for a client to have
 # retried the request a number of times or the completer to have tried it a few
 # times.
-IDEMPOTENCY_KEY_REAP_TIMEOUT = 24 * 3600
+#
+# I've suggested 72 hours because in case of a bad bug that 500s a bunch of
+# requests and which was deployed on Friday, 72 hours gives enough time for the
+# entire weekend to pass, a developer to fix the problem on Monday, and then
+# time for the completer to pass through and push all the failed requests to
+# success.
+IDEMPOTENCY_KEY_REAP_TIMEOUT = 72 * 3600
 
 # Names of recovery points.
 RECOVERY_POINT_STARTED        = "started"

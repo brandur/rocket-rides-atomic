@@ -40,7 +40,7 @@ completing jobs that are at least five minutes old to give the original client
 a chance to retry them first.
 
 If you leave the programs running _really_ long, the `reaper` will kick in and
-start removing keys that are at least 24 hours old.
+start removing keys that are at least 72 hours old.
 
 ## Setup
 
