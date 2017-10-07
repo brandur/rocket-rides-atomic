@@ -6,149 +6,151 @@ require "stripe"
 
 require_relative "./config"
 
-set :server, %w[puma]
+class API < Sinatra::Base
+  set :server, %w[puma]
 
-post "/rides" do
-  user = authenticate_user(request)
-  key_val = validate_idempotency_key(request)
-  params = validate_params(request)
+  post "/rides" do
+    user = authenticate_user(request)
+    key_val = validate_idempotency_key(request)
+    params = validate_params(request)
 
-  # may be created on this request or retrieved if it already exists
-  key = nil
+    # may be created on this request or retrieved if it already exists
+    key = nil
 
-  # Our first atomic phase to create or update an idempotency key.
-  #
-  # A key concept here is that if two requests try to insert or update within
-  # close proximity, one of the two will be aborted by Postgres because we're
-  # using a transaction with SERIALIZABLE isolation level. It may not look it,
-  # but this code is safe from races.
-  atomic_phase(key) do
-    key = IdempotencyKey.first(user_id: user.id, idempotency_key: key_val)
+    # Our first atomic phase to create or update an idempotency key.
+    #
+    # A key concept here is that if two requests try to insert or update within
+    # close proximity, one of the two will be aborted by Postgres because we're
+    # using a transaction with SERIALIZABLE isolation level. It may not look
+    # it, but this code is safe from races.
+    atomic_phase(key) do
+      key = IdempotencyKey.first(user_id: user.id, idempotency_key: key_val)
 
-    if key
-      # Programs sending multiple requests with different parameters but the
-      # same idempotency key is a bug.
-      if key.request_params != params
-        halt 409, JSON.generate(wrap_error(Messages.error_params_mismatch))
-      end
-
-      # Only acquire a lock if the key is unlocked or its lock as expired
-      # because it was long enough ago.
-      if key.locked_at && key.locked_at > Time.now - IDEMPOTENCY_KEY_LOCK_TIMEOUT
-        halt 409, JSON.generate(wrap_error(Messages.error_request_in_progress))
-      end
-
-      # Lock the key unless the request is already finished.
-      if key.recovery_point != RECOVERY_POINT_FINISHED
-        key.update(locked_at: Time.now)
-      end
-    else
-      key = IdempotencyKey.create(
-        idempotency_key: key_val,
-        locked_at:       Time.now,
-        recovery_point:  RECOVERY_POINT_STARTED,
-        request_method:  request.request_method,
-        request_params:  Sequel.pg_jsonb(params),
-        request_path:    request.path_info,
-        user_id:         user.id,
-      )
-    end
-
-    # no response and no need to set a recovery point
-    NoOp.new
-  end
-
-  # may be created on this request or retrieved if recovering a partially
-  # completed previous request
-  ride = nil
-
-  loop do
-    case key.recovery_point
-    when RECOVERY_POINT_STARTED
-      atomic_phase(key) do
-        ride = Ride.create(
-          idempotency_key_id: key.id,
-          origin_lat:         params["origin_lat"],
-          origin_lon:         params["origin_lon"],
-          target_lat:         params["target_lat"],
-          target_lon:         params["target_lon"],
-          stripe_charge_id:   nil, # no charge created yet
-          user_id:            user.id,
-        )
-
-        # in the same transaction insert an audit record for what happened
-        AuditRecord.insert(
-          action:        AUDIT_RIDE_CREATED,
-          data:          Sequel.pg_jsonb(params),
-          origin_ip:     request.ip,
-          resource_id:   ride.id,
-          resource_type: "ride",
-          user_id:       user.id,
-        )
-
-        RecoveryPoint.new(RECOVERY_POINT_RIDE_CREATED)
-      end
-
-    when RECOVERY_POINT_RIDE_CREATED
-      atomic_phase(key) do
-        # retrieve a ride record if necessary (i.e. we're recovering)
-        ride = Ride.first(idempotency_key_id: key.id) if ride.nil?
-
-        # if ride is still nil by this point, we have a bug
-        raise "Bug! Should have ride for key at #{RECOVERY_POINT_RIDE_CREATED}" \
-          if ride.nil?
-
-        # Rocket Rides is still a new service, so during our prototype phase
-        # we're going to give $20 fixed-cost rides to everyone, regardless of
-        # distance. We'll implement a better algorithm later to better
-        # represent the cost in time and jetfuel on the part of our pilots.
-        begin
-          charge = Stripe::Charge.create(
-            amount:      20_00,
-            currency:    "usd",
-            customer:    user.stripe_customer_id,
-            description: "Charge for ride #{ride.id}",
-          )
-        rescue Stripe::CardError
-          # Sets the response on the key and short circuits execution by
-          # sending execution right to 'finished'.
-          Response.new(402, wrap_error(Messages.error_payment(error: $!.message)))
-        rescue Stripe::StripeError
-          Response.new(503, wrap_error(Messages.error_payment_generic))
-        else
-          ride.update(stripe_charge_id: charge.id)
-          RecoveryPoint.new(RECOVERY_POINT_CHARGE_CREATED)
+      if key
+        # Programs sending multiple requests with different parameters but the
+        # same idempotency key is a bug.
+        if key.request_params != params
+          halt 409, JSON.generate(wrap_error(Messages.error_params_mismatch))
         end
-      end
 
-    when RECOVERY_POINT_CHARGE_CREATED
-      atomic_phase(key) do
-        # Send a receipt asynchronously by adding an entry to the staged_jobs
-        # table. By funneling the job through Postgres, we make this operation
-        # transaction-safe.
-        DB[:staged_jobs].insert(
-          job_name: "send_ride_receipt",
-          job_args: Sequel.pg_jsonb({
-            amount:   20_00,
-            currency: "usd",
-            user_id:  user.id
-          })
+        # Only acquire a lock if the key is unlocked or its lock as expired
+        # because it was long enough ago.
+        if key.locked_at && key.locked_at > Time.now - IDEMPOTENCY_KEY_LOCK_TIMEOUT
+          halt 409, JSON.generate(wrap_error(Messages.error_request_in_progress))
+        end
+
+        # Lock the key unless the request is already finished.
+        if key.recovery_point != RECOVERY_POINT_FINISHED
+          key.update(locked_at: Time.now)
+        end
+      else
+        key = IdempotencyKey.create(
+          idempotency_key: key_val,
+          locked_at:       Time.now,
+          recovery_point:  RECOVERY_POINT_STARTED,
+          request_method:  request.request_method,
+          request_params:  Sequel.pg_jsonb(params),
+          request_path:    request.path_info,
+          user_id:         user.id,
         )
-        Response.new(201, wrap_ok(Messages.ok))
       end
 
-    when RECOVERY_POINT_FINISHED
-      break
-
-    else
-      raise "Bug! Unhandled recovery point '#{key.recovery_point}'."
+      # no response and no need to set a recovery point
+      NoOp.new
     end
 
-    # If we got here, allow the loop to move us onto the next phase of the
-    # request. Finished requests will break the loop.
-  end
+    # may be created on this request or retrieved if recovering a partially
+    # completed previous request
+    ride = nil
 
-  [key.response_code, JSON.generate(key.response_body)]
+    loop do
+      case key.recovery_point
+      when RECOVERY_POINT_STARTED
+        atomic_phase(key) do
+          ride = Ride.create(
+            idempotency_key_id: key.id,
+            origin_lat:         params["origin_lat"],
+            origin_lon:         params["origin_lon"],
+            target_lat:         params["target_lat"],
+            target_lon:         params["target_lon"],
+            stripe_charge_id:   nil, # no charge created yet
+            user_id:            user.id,
+          )
+
+          # in the same transaction insert an audit record for what happened
+          AuditRecord.insert(
+            action:        AUDIT_RIDE_CREATED,
+            data:          Sequel.pg_jsonb(params),
+            origin_ip:     request.ip,
+            resource_id:   ride.id,
+            resource_type: "ride",
+            user_id:       user.id,
+          )
+
+          RecoveryPoint.new(RECOVERY_POINT_RIDE_CREATED)
+        end
+
+      when RECOVERY_POINT_RIDE_CREATED
+        atomic_phase(key) do
+          # retrieve a ride record if necessary (i.e. we're recovering)
+          ride = Ride.first(idempotency_key_id: key.id) if ride.nil?
+
+          # if ride is still nil by this point, we have a bug
+          raise "Bug! Should have ride for key at #{RECOVERY_POINT_RIDE_CREATED}" \
+            if ride.nil?
+
+          # Rocket Rides is still a new service, so during our prototype phase
+          # we're going to give $20 fixed-cost rides to everyone, regardless of
+          # distance. We'll implement a better algorithm later to better
+          # represent the cost in time and jetfuel on the part of our pilots.
+          begin
+            charge = Stripe::Charge.create(
+              amount:      20_00,
+              currency:    "usd",
+              customer:    user.stripe_customer_id,
+              description: "Charge for ride #{ride.id}",
+            )
+          rescue Stripe::CardError
+            # Sets the response on the key and short circuits execution by
+            # sending execution right to 'finished'.
+            Response.new(402, wrap_error(Messages.error_payment(error: $!.message)))
+          rescue Stripe::StripeError
+            Response.new(503, wrap_error(Messages.error_payment_generic))
+          else
+            ride.update(stripe_charge_id: charge.id)
+            RecoveryPoint.new(RECOVERY_POINT_CHARGE_CREATED)
+          end
+        end
+
+      when RECOVERY_POINT_CHARGE_CREATED
+        atomic_phase(key) do
+          # Send a receipt asynchronously by adding an entry to the staged_jobs
+          # table. By funneling the job through Postgres, we make this
+          # operation transaction-safe.
+          DB[:staged_jobs].insert(
+            job_name: "send_ride_receipt",
+            job_args: Sequel.pg_jsonb({
+              amount:   20_00,
+              currency: "usd",
+              user_id:  user.id
+            })
+          )
+          Response.new(201, wrap_ok(Messages.ok))
+        end
+
+      when RECOVERY_POINT_FINISHED
+        break
+
+      else
+        raise "Bug! Unhandled recovery point '#{key.recovery_point}'."
+      end
+
+      # If we got here, allow the loop to move us onto the next phase of the
+      # request. Finished requests will break the loop.
+    end
+
+    [key.response_code, JSON.generate(key.response_body)]
+  end
 end
 
 #
@@ -443,6 +445,6 @@ end
 # run
 #
 
-#if __FILE__ == $0
-  #API.run!
-#end
+if __FILE__ == $0
+  API.run!
+end

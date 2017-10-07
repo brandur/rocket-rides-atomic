@@ -20,7 +20,7 @@ RSpec.describe "api.rb" do
   include Rack::Test::Methods
 
   def app
-    Sinatra::Application
+    API
   end
 
   before do
