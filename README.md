@@ -10,8 +10,8 @@ through each API request a call is made out to Stripe's API which can't be
 rolled back if it fails, so if it does we rely on clients re-issuing the API
 request with the same `Idempotency-Key` header until its results are
 definitive. After any request is considered to be complete, the results are
-stored on the idempotency key relation and returned for any new requests that
-use the same key.
+stored on the idempotency key relation and returned for any future requests
+that use the same key.
 
 ## Architecture
 
