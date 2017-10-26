@@ -31,8 +31,9 @@ If you look in `Procfile`, you'll see these processes:
   to do something.
 
 After you run `forego start` you should see the `simulator` issuing jobs
-against `api` right away. Some of these will succeed, and that will give the
-`enqueuer` something to do.
+against `api` right away. Some of these will succeed with a `201`, and that
+will give the `enqueuer` something to do. Some will fail with a `500` as the
+`simulator` simulates some level of failure.
 
 If you leave the programs running long enough, the `completer` will kick in and
 start to finish up any of the `simulator`'s failed API requests. It only starts
