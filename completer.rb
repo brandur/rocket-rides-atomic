@@ -54,7 +54,7 @@ class Completer
         num_succeeded += 1
       rescue
         # also send this exception to Rollbar/Sentry for visibility
-        $stdout.puts "API call failed: #{$!.message}"
+        $stderr.puts "API call failed: #{$!.message}"
         num_failed += 1
       end
     end
