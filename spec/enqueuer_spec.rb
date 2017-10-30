@@ -8,7 +8,7 @@ RSpec.describe Enqueuer do
     suppress_stdout
   end
 
-  it "pushes through an existing idempotency key" do
+  it "enqueues and removes a staged job" do
     create_staged_job
 
     num_enqueued = Enqueuer.new.run_once
