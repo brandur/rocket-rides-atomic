@@ -1,3 +1,4 @@
+require "logger"
 require "pg"
 require "sequel"
 require "stripe"
