@@ -12,7 +12,7 @@ RSpec.describe Simulator do
 
   it "initiates a request" do
     stub_request(:post, "http://localhost:5000/rides")
-    Simulator.new.run_once
+    Simulator.new(port: "5000").run_once
     assert_requested :post, "http://localhost:5000/rides"
   end
 end

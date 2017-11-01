@@ -4,6 +4,10 @@ require "securerandom"
 require_relative "./api"
 
 class Simulator
+  def initialize(port:)
+    self.port = port
+  end
+
   def run
     loop do
       run_once
@@ -17,7 +21,7 @@ class Simulator
     # created by up.rb
     user = User.first(email: "user@example.com")
 
-    http = Net::HTTP.new("localhost", "5000")
+    http = Net::HTTP.new("localhost", port)
     request = Net::HTTP::Post.new("/rides")
     request["Authorization"] = user.email
     request["Idempotency-Key"] = SecureRandom.uuid
@@ -35,6 +39,10 @@ class Simulator
     $stdout.puts "Response: status=#{response.code} body=#{response.body}"
   end
 
+  #
+  # private
+  #
+
   VALID_PARAMS = {
     "origin_lat" => 0.0,
     "origin_lon" => 0.0,
@@ -42,6 +50,8 @@ class Simulator
     "target_lon" => 0.0,
   }.freeze
   private_constant :VALID_PARAMS
+
+  attr_accessor :port
 end
 
 #
@@ -53,5 +63,10 @@ if __FILE__ == $0
   $stderr.sync = true
   $stdout.sync = true
 
-  Simulator.new.run
+  port = ENV["API_PORT"] || abort("need API_PORT")
+
+  # wait a moment for the API to come up
+  sleep(3)
+
+  Simulator.new(port: port).run
 end

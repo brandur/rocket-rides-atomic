@@ -495,5 +495,6 @@ end
 #
 
 if __FILE__ == $0
-  API.run!
+  port = ENV["API_PORT"] || abort("need API_PORT")
+  API.run!(port: port)
 end
