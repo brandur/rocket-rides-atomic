@@ -382,7 +382,7 @@ def atomic_phase(key, &block)
     # you could possibly retry this error instead
     error = true
     raise if settings.raise_errors
-    halt 429, JSON.generate(wrap_error(Messages.error_retry))
+    halt 409, JSON.generate(wrap_error(Messages.error_retry))
   rescue
     error = true
     raise if settings.raise_errors

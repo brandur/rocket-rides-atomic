@@ -159,7 +159,7 @@ RSpec.describe API do
         eq(Messages.error_request_in_progress)
     end
 
-    it "unlocks a key and returns 429 on a serialization failure" do
+    it "unlocks a key and returns 409 on a serialization failure" do
       expect(Stripe::Charge).to receive(:create) do
         raise Sequel::SerializationFailure, "Serialization failure."
       end
