@@ -22,10 +22,12 @@ RSpec.configure do |config|
 end
 
 def clear_database
-  DB.run("TRUNCATE audit_records CASCADE")
-  DB.run("TRUNCATE idempotency_keys CASCADE")
-  DB.run("TRUNCATE rides CASCADE")
-  DB.run("TRUNCATE staged_jobs CASCADE")
+  DB.transaction do
+    DB.run("TRUNCATE audit_records CASCADE")
+    DB.run("TRUNCATE idempotency_keys CASCADE")
+    DB.run("TRUNCATE rides CASCADE")
+    DB.run("TRUNCATE staged_jobs CASCADE")
+  end
 end
 
 def create_key(params = {})
