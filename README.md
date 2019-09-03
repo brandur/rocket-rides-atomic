@@ -20,7 +20,7 @@ If you look in `Procfile`, you'll see these processes:
 * `api`: The main Rocket Rides API. It responds to requests and makes them
   idempotent using a required `Idempotency-Key` header.
 * `completer`: Finds failed API requests and attempts to push them through to
-  completion (after a grace period to give the user a change to do it first).
+  completion (after a grace period to give the user a chance to do it first).
 * `enqueuer`: Moves [transactionally-staged jobs][jobs] out of the database and
   over into a real job queue to be worked.
 * `reaper`: Reaps idempotency keys after some extended period wherein failed
