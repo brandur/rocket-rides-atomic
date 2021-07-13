@@ -14,6 +14,7 @@ GEM
     hashdiff (0.3.2)
     method_source (0.8.2)
     multipart-post (2.0.0)
+    nio4r (2.5.7)
     pg (0.18.3)
     pry (0.10.4)
       coderay (~> 1.1.0)
@@ -23,7 +24,8 @@ GEM
       byebug (~> 9.0)
       pry (~> 0.10)
     public_suffix (4.0.6)
-    puma (3.12.4)
+    puma (4.3.8)
+      nio4r (~> 2.0)
     rack (1.6.12)
     rack-protection (1.5.5)
       rack
